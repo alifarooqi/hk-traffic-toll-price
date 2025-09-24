@@ -10,7 +10,7 @@ Hong Kong Traffic Data ETL Script
 - Outputs hourly traffic CSV
 
 Usage:
-    python traffic_etl.py
+    python hk_traffic.py
 """
 
 import os
@@ -18,24 +18,13 @@ import glob
 import requests
 import xml.etree.ElementTree as ET
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import timedelta
 from tqdm import tqdm
-
-# -------------------------
-# Config
-# -------------------------
-START_DATE = datetime(2025, 5, 1)
-END_DATE   = datetime(2025, 6, 30)
-POLICY_CHANGE_DATE = datetime(2025, 5, 31)
-
-LIST_API   = "https://api.data.gov.hk/v1/historical-archive/list-file-versions"
-GET_API    = "https://api.data.gov.hk/v1/historical-archive/get-file"
-RAW_URL    = "https://resource.data.one.gov.hk/td/traffic-detectors/rawSpeedVol-all.xml"
-
-DATA_DIR   = "xml_cache"   # local cache folder
-CACHE_FILE = "hk_tunnel_traffic.csv"
-
-LOCATIONS_CSV_URL = "https://static.data.gov.hk/td/traffic-data-strategic-major-roads/info/traffic_speed_volume_occ_info.csv"
+from config import (
+    START_DATE, END_DATE, POLICY_CHANGE_DATE,
+    LIST_API, GET_API, RAW_URL, LOCATIONS_CSV_URL,
+    DATA_DIR, CACHE_FILE, CORRIDOR_KEYWORDS
+)
 
 
 # -------------------------
@@ -45,13 +34,8 @@ def load_metadata():
     loc_df = pd.read_csv(LOCATIONS_CSV_URL)
     loc_df.columns = [c.strip() for c in loc_df.columns]
 
-    corridor_keywords = {
-        "tai_lam": ["Tai Lam"],
-        "nt_circular": ["Tuen Mun Road", "NT Circular"],
-    }
-
     def map_corridor(road_name):
-        for corridor, kws in corridor_keywords.items():
+        for corridor, kws in CORRIDOR_KEYWORDS.items():
             for kw in kws:
                 if kw.lower() in str(road_name).lower():
                     return corridor
@@ -167,14 +151,14 @@ def aggregate(rows, loc_corridors):
     df["timestamp"] = pd.to_datetime(df["timestamp"])
 
     df = df.merge(
-        loc_corridors[["AID_ID_Number","corridor"]],
+        loc_corridors[["AID_ID_Number", "corridor"]],
         left_on="detector_id", right_on="AID_ID_Number", how="left"
     )
 
     df_hour = df.groupby([pd.Grouper(key="timestamp", freq="H"), "corridor"]).agg(
-        volume=("volume","sum"),
-        speed=("speed","mean"),
-        occupancy=("occupancy","mean")
+        volume=("volume", "sum"),
+        speed=("speed", "mean"),
+        occupancy=("occupancy", "mean")
     ).reset_index()
 
     pivot = df_hour.pivot(index="timestamp", columns="corridor", values="volume").fillna(0).reset_index()
