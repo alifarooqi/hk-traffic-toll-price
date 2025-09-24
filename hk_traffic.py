@@ -20,10 +20,11 @@ import xml.etree.ElementTree as ET
 import pandas as pd
 from datetime import timedelta
 from tqdm import tqdm
+from concurrent.futures import ThreadPoolExecutor, as_completed, ProcessPoolExecutor
 from config import (
     START_DATE, END_DATE, POLICY_CHANGE_DATE,
     LIST_API, GET_API, RAW_URL, LOCATIONS_CSV_URL,
-    DATA_DIR, CACHE_FILE, CORRIDOR_KEYWORDS
+    DATA_DIR, CACHE_FILE, CORRIDOR_KEYWORDS, MAX_WORKERS
 )
 
 
@@ -52,6 +53,26 @@ def load_metadata():
 # -------------------------
 # Download snapshots (resumable)
 # -------------------------
+def fetch_and_save(ts):
+    fname = os.path.join(DATA_DIR, f"{ts}.xml")
+    if os.path.exists(fname):
+        return ts
+    try:
+        r = requests.get(GET_API, params={"url": RAW_URL, "time": ts}, timeout=30)
+        if r.status_code == 200:
+            with open(fname, "wb") as f:
+                f.write(r.content)
+            return ts
+        else:
+            with open(fname.replace(".xml", ".skip"), "w") as f:
+                f.write("not found")
+            return ts
+    except Exception as e:
+        with open(fname.replace(".xml", ".skip"), "w") as f:
+            f.write("error")
+        return ts
+
+
 def download_snapshots():
     os.makedirs(DATA_DIR, exist_ok=True)
     curr = START_DATE
@@ -60,21 +81,16 @@ def download_snapshots():
         day = curr.strftime("%Y%m%d")
         resp = requests.get(LIST_API, params={"url": RAW_URL, "start": day, "end": day})
         versions = resp.json().get("timestamps", [])
+
         files = glob.glob(os.path.join(DATA_DIR, f"{day}-*.xml")) + glob.glob(os.path.join(DATA_DIR, f"{day}-*.skip"))
         downloaded = {os.path.splitext(os.path.basename(f))[0] for f in files}
         to_download = [ver for ver in versions if ver not in downloaded]
         print(f"{curr.date()} -> {len(versions)} total snapshots, {len(to_download)} missing, {len(downloaded)} already cached.")
-        for ts in tqdm(to_download, desc=f"Downloading {day}"):
-            fname = os.path.join(DATA_DIR, f"{ts}.xml")
-            if os.path.exists(fname):
-                continue
-            r = requests.get(GET_API, params={"url": RAW_URL, "time": ts})
-            if r.status_code == 200:
-                with open(fname, "wb") as f:
-                    f.write(r.content)
-            else:
-                with open(fname.replace(".xml", ".skip"), "w") as f:
-                    f.write("not found")
+
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            futures = [executor.submit(fetch_and_save, ts) for ts in to_download]
+            for f in tqdm(as_completed(futures), total=len(futures), desc=f"Downloading {day}"):
+                ts = f.result()
 
         curr += timedelta(days=1)
     print("✅ All snapshots downloaded to", DATA_DIR)
@@ -134,11 +150,19 @@ def parse_snapshot_file(filepath, valid_ids):
 # Parse all cached XMLs
 # -------------------------
 def parse_all_snapshots(valid_ids):
-    rows = []
     files = glob.glob(os.path.join(DATA_DIR, "*.xml"))
     print(f"📖 Parsing {len(files)} XML snapshots...")
-    for filepath in tqdm(files, desc="Parsing XMLs"):
-        rows.extend(parse_snapshot_file(filepath, valid_ids))
+
+    rows = []
+    with ProcessPoolExecutor() as executor:  # use ThreadPoolExecutor if mostly I/O
+        futures = {executor.submit(parse_snapshot_file, f, valid_ids): f for f in files}
+        for f in tqdm(as_completed(futures), total=len(futures), desc="Parsing XMLs"):
+            try:
+                result = f.result()
+                rows.extend(result)
+            except Exception as e:
+                tqdm.write(f"⚠️ Error parsing {futures[f]}: {e}")
+
     print("✅ Parsed rows:", len(rows))
     return rows
 
@@ -155,7 +179,7 @@ def aggregate(rows, loc_corridors):
         left_on="detector_id", right_on="AID_ID_Number", how="left"
     )
 
-    df_hour = df.groupby([pd.Grouper(key="timestamp", freq="H"), "corridor"]).agg(
+    df_hour = df.groupby([pd.Grouper(key="timestamp", freq="h"), "corridor"]).agg(
         volume=("volume", "sum"),
         speed=("speed", "mean"),
         occupancy=("occupancy", "mean")

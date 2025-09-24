@@ -4,7 +4,7 @@ from datetime import datetime
 # Date Ranges
 # -------------------------
 START_DATE = datetime(2025, 5, 1)
-END_DATE = datetime(2025, 6, 30)
+END_DATE = datetime(2025, 9, 23)
 POLICY_CHANGE_DATE = datetime(2025, 5, 31)
 
 # -------------------------
@@ -18,15 +18,15 @@ LOCATIONS_CSV_URL = "https://static.data.gov.hk/td/traffic-data-strategic-major-
 # -------------------------
 # Local Paths
 # -------------------------
-DATA_DIR = "xml_cache"   # local cache folder
+DATA_DIR = "xml_cache"  # local cache folder
 CACHE_FILE = "hk_tunnel_traffic.csv"
 
 # -------------------------
 # Toll Assumptions (HKD)
 # -------------------------
 TOLL_BEFORE = 65
-TOLL_PEAK = 40
-TOLL_OFFPEAK = 20
+TOLL_PEAK = 45
+TOLL_OFFPEAK = 30
 
 # -------------------------
 # Corridor Mapping
@@ -35,3 +35,8 @@ CORRIDOR_KEYWORDS = {
     "tai_lam": ["Tai Lam"],
     "nt_circular": ["Tuen Mun Road", "NT Circular"]
 }
+
+# -------------------------
+# Parallel downloads
+# -------------------------
+MAX_WORKERS = 50
