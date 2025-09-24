@@ -3,7 +3,7 @@ from datetime import datetime
 # -------------------------
 # Date Ranges
 # -------------------------
-START_DATE = datetime(2025, 5, 1)
+START_DATE = datetime(2025, 2, 1)
 END_DATE = datetime(2025, 9, 23)
 POLICY_CHANGE_DATE = datetime(2025, 5, 31)
 
@@ -39,4 +39,4 @@ CORRIDOR_KEYWORDS = {
 # -------------------------
 # Parallel downloads
 # -------------------------
-MAX_WORKERS = 50
+MAX_WORKERS = 25
